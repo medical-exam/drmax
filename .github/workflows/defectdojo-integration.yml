@@ -1,0 +1,106 @@
+# name: DefectDojo Integration
+
+# on:
+#   push:
+#     branches:
+#       - main
+#   pull_request:
+#     branches:
+#       - main
+
+# jobs:
+#   security-scan:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v3
+
+#       - name: Set up Python
+#         uses: actions/setup-python@v4
+#         with:
+#           python-version: "3.11"
+
+#       - name: Install dependencies
+#         run: |
+#           pip install bandit bandit-sarif-formatter jq requests
+
+#       - name: Run Security Scan
+#         id: scan
+#         continue-on-error: true
+#         run: |
+#           bandit -r . -f json -o bandit-results.json || true
+
+#       - name: Debug Bandit Results
+#         run: cat bandit-results.json | jq .
+
+#       - name: Upload Findings to DefectDojo
+#         env:
+#           DEFECT_DOJO_URL: ${{ secrets.DEFECT_DOJO_URL }}
+#           DEFECT_DOJO_API_KEY: ${{ secrets.DEFECT_DOJO_API_KEY }}
+#           DEFECT_DOJO_ENGAGEMENT_ID: ${{ secrets.DEFECT_DOJO_ENGAGEMENT_ID }}
+#         run: |
+#           python <<EOF
+#           import json
+#           import os
+#           import requests
+
+#           # Debugging: Print environment variables
+#           DEFECT_DOJO_URL = os.getenv("DEFECT_DOJO_URL")
+#           DEFECT_DOJO_API_KEY = os.getenv("DEFECT_DOJO_API_KEY")
+#           DEFECT_DOJO_ENGAGEMENT_ID = os.getenv("DEFECT_DOJO_ENGAGEMENT_ID")
+
+#           print("DefectDojo URL:", DEFECT_DOJO_URL)
+#           print("Engagement ID:", DEFECT_DOJO_ENGAGEMENT_ID)
+
+#           # Ensure credentials exist
+#           if not DEFECT_DOJO_URL or not DEFECT_DOJO_API_KEY or not DEFECT_DOJO_ENGAGEMENT_ID:
+#               print("Missing DefectDojo credentials. Exiting...")
+#               exit(1)
+
+#           # Read Bandit scan results
+#           try:
+#               with open("bandit-results.json", "r") as report:
+#                   scan_results = json.load(report)
+#               print("✅ Bandit scan results loaded successfully!")
+#           except Exception as e:
+#               print(f"❌ Failed to read Bandit scan results: {e}")
+#               exit(1)
+
+#           # Ensure the file is not empty before uploading
+#           if not scan_results.get("results"):
+#               print("⚠ No findings in Bandit results, skipping upload.")
+#               exit(0)
+
+#           # Prepare data for DefectDojo API
+#           files = {
+#               'file': ('bandit-results.json', open('bandit-results.json', 'rb'), 'application/json')
+#           }
+
+#           data = {
+#               'engagement': DEFECT_DOJO_ENGAGEMENT_ID,
+#               'scan_type': 'Bandit Scan',
+#               'close_old_findings': 'true',
+#               'active': 'true'
+#           }
+
+#           # DefectDojo API endpoint for scan upload
+#           upload_url = f"{DEFECT_DOJO_URL}/api/v2/import-scan/"
+
+#           # Upload scan results to DefectDojo
+#           headers = {
+#               'Authorization': f'Token {DEFECT_DOJO_API_KEY}'
+#           }
+
+#           try:
+#               response = requests.post(upload_url, data=data, files=files, headers=headers)
+#               print("🔄 Upload response:", response.json())
+#               if response.status_code == 201:
+#                   print("✅ Findings uploaded successfully!")
+#               else:
+#                   print(f"❌ Failed to upload findings: {response.text}")
+#                   exit(1)
+#           except Exception as e:
+#               print(f"❌ Error uploading findings to DefectDojo: {e}")
+#               exit(1)
+#           EOF

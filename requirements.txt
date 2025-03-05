@@ -1,0 +1,7 @@
+# requirements.txt
+streamlit
+openai
+python-dotenv
+streamlit-chat
+matplotlib
+boto3
