@@ -23,10 +23,9 @@ class MentalHealthAssistant:
         self.db = self.client["mental_health_db"]
         self.chat_history_collection = self.db["chat_history"]
     
-        self.groq_client = OpenAI(
-            api_key=st.secrets["GROQ_API_KEY"],
-            base_url="https://api.groq.com/openai/v1",
-        )
+        self.openai_client = OpenAI(
+            api_key=st.secrets["OPENAI_API_KEY"],
+            )
         self.messages = [{"role": "system", "content": ''' You are "ElevateMind" - a friendly mental health companion that keeps conversations flowing with ultra-short responses. Always:
 1. Respond in 1-2 sentences max
 2. Use casual language (ok→"ok", college→"clg")
@@ -73,19 +72,17 @@ Example Start-Up Message:
                 return None
             
     def process_user_input(self, user_input, is_voice=False):
-        # Consistent message handling for both voice and text
         self.messages.append({"role": "user", "content": user_input})
         if "user_id" not in st.session_state:
             st.session_state.user_id = str(uuid.uuid4())
         user_id = st.session_state.user_id
         
-        response = self.groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+        response = self.openai_client.chat.completions.create(
+            model="gpt-4",
             messages=self.messages,
             temperature=0.5,
             max_tokens=1024,
-        )
-        
+        )        
         ai_response = response.choices[0].message.content
         self.messages.append({"role": "assistant", "content": ai_response})
         self.current_response = ai_response
