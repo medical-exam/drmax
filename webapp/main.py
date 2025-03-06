@@ -11,6 +11,7 @@ from pymongo import MongoClient
 import uuid
 import datetime
 from bson import ObjectId
+import psycopg2 # postgresql
 
 
 
@@ -22,7 +23,18 @@ class MentalHealthAssistant:
         self.client = MongoClient(st.secrets["MONGO_URI"]) 
         self.db = self.client["mental_health_db"]
         self.chat_history_collection = self.db["chat_history"]
-    
+
+        self.conn = psycopg2.connect(
+            dbname=st.secrets["POSTGRES_DB"],
+            user=st.secrets["POSTGRES_USER"],
+            password=st.secrets["POSTGRES_PASSWORD"],
+            host=st.secrets["POSTGRES_HOST"],
+            port=st.secrets["POSTGRES_PORT"]
+        )
+        self.cursor = self.conn.cursor()
+
+        self.create_chat_table()
+
         self.openai_client = OpenAI(
             api_key=st.secrets["OPENAI_API_KEY"],
             )
@@ -59,6 +71,20 @@ Example Start-Up Message:
         self.speech_thread = None
         self.current_response = ""
         self._stop_speaking = False
+
+    def create_chat_table(self):
+        """Create chat history table if it does not exist"""
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS chat_history (
+            id SERIAL PRIMARY KEY,
+            user_id UUID NOT NULL,
+            user_input TEXT NOT NULL,
+            ai_response TEXT NOT NULL,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+        self.cursor.execute(create_table_query)
+        self.conn.commit()
 
     def recognize_speech(self):
         recognizer = sr.Recognizer()
@@ -157,39 +183,53 @@ Example Start-Up Message:
         return self.speech_thread and self.speech_thread.is_alive()
     
     def get_chat_history(self):
-        """Retrieve past conversations from MongoDB"""
-        history = self.chat_history_collection.find().sort("timestamp", -1)
-        return [{"user_input": entry["user_input"], "ai_response": entry["ai_response"]} for entry in history]
+        """Retrieve past conversations from PostgreSQL"""
+        query = """
+        SELECT user_input, ai_response, timestamp FROM chat_history
+        ORDER BY timestamp DESC;
+        """
+        self.cursor.execute(query)
+        history = self.cursor.fetchall()
+        print("Chat History:", history)
+        conversation = []
+        for entry in history:
+            conversation.append({"user_input": entry[0], "ai_response": entry[1], "timestamp": entry[2]})
+
+        return conversation  # Returns a list of dictionaries
     
     def store_chat_history(self, user_input, ai_response, user_id):
-            """Store user conversation in MongoDB"""
-            chat_entry = {
-                "user_input": user_input,
-                "ai_response": ai_response,
-                "timestamp": datetime.datetime.now(),
-                "user_id": user_id
-            }
-            self.chat_history_collection.insert_one(chat_entry)
+        """Store user conversation in PostgreSQL"""
+        insert_query = """
+        INSERT INTO chat_history (user_id, user_input, ai_response)
+        VALUES (%s, %s, %s);
+        """
+        self.cursor.execute(insert_query, (user_id, user_input, ai_response))
+        self.conn.commit()
 
     def generate_report_for_user(self, user_id):
         """Generate a mental health report based on the user's chat history"""
-        try:
-            user_id = ObjectId(user_id)
-        except:
-            pass
-
-        user_conversations = list(self.chat_history_collection.find({"user_id": user_id}).sort("timestamp", -1))
+        query = """
+        SELECT user_input, ai_response FROM chat_history
+        WHERE user_id = %s
+        ORDER BY timestamp DESC;
+        """
+        self.cursor.execute(query, (user_id,))
+        user_conversations = self.cursor.fetchall()
 
         if not user_conversations:
-            return "No chat history found for this user !"
+            return "No chat history found for this user!"
 
         conversation_text = "\n".join([
-            f"User: {entry.get('user_input', 'N/A')}\nAI: {entry.get('ai_response', 'N/A')}"
-            for entry in user_conversations
+            f"User: {entry[0]}\nAI: {entry[1]}" for entry in user_conversations
         ])
 
         report = generate_report(conversation_text)
         return report
+
+    def close_connection(self):
+            """Close PostgreSQL connection"""
+            self.cursor.close()
+            self.conn.close()
  
 
     
