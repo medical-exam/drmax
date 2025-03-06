@@ -5,6 +5,7 @@ import time
 from openai import OpenAI
 from dotenv import load_dotenv
 from streamlit_chat import message
+from auth import auth
 
 # Load environment variables
 load_dotenv()
@@ -57,52 +58,55 @@ def generate_response(prompt):
     )
     return response.choices[0].message.content
 
-# Streamlit UI
-st.set_page_config(page_title="Dr. Max - Medical Chatbot", layout="wide")
+if not st.session_state["authenticated"]:
+    auth()
+else:
+    # Streamlit UI
+    st.set_page_config(page_title="Dr. Max - Medical Chatbot", layout="wide")
 
-st.title("🤖 Dr. Max - AI Medical Mentor")
-st.subheader("Your sarcastic study partner for medical exams")
+    st.title("🤖 Dr. Max - AI Medical Mentor")
+    st.subheader("Your sarcastic study partner for medical exams")
 
-# Chat interface
-chat_container = st.container()
-input_container = st.container()
+    # Chat interface
+    chat_container = st.container()
+    input_container = st.container()
 
-with input_container:
-    user_input = st.text_input("Ask Dr. Max about medical concepts, cases, or exam strategies:", key="input")
-    if user_input:
-        s3_content = search_s3_for_content(user_input)
-        if s3_content:
-            response = s3_content  # Use content from S3 if found
-        else:
-            response = generate_response(user_input)  # Otherwise, use OpenAI
-        
-        st.session_state.chat_history.append(("user", user_input))
-        st.session_state.chat_history.append(("system", ""))  # Placeholder for streamed response
-        
-        response_container = st.empty()
-        displayed_response = ""
-        
-        for word in response.split():
-            displayed_response += word + " "
-            response_container.markdown(f"**Dr. Max:** {displayed_response}")
-            time.sleep(0.1)  # Simulate streaming effect
-        
-        st.session_state.chat_history[-1] = ("system", displayed_response)
+    with input_container:
+        user_input = st.text_input("Ask Dr. Max about medical concepts, cases, or exam strategies:", key="input")
+        if user_input:
+            s3_content = search_s3_for_content(user_input)
+            if s3_content:
+                response = s3_content  # Use content from S3 if found
+            else:
+                response = generate_response(user_input)  # Otherwise, use OpenAI
+            
+            st.session_state.chat_history.append(("user", user_input))
+            st.session_state.chat_history.append(("system", ""))  # Placeholder for streamed response
+            
+            response_container = st.empty()
+            displayed_response = ""
+            
+            for word in response.split():
+                displayed_response += word + " "
+                response_container.markdown(f"**Dr. Max:** {displayed_response}")
+                time.sleep(0.1)  # Simulate streaming effect
+            
+            st.session_state.chat_history[-1] = ("system", displayed_response)
 
-# Display chat history
-with chat_container:
-    for i, (role, msg) in enumerate(st.session_state.chat_history):
-        if role == "user":
-            message(msg, is_user=True, key=f"{i}_user")
-        else:
-            message(msg, key=f"{i}")
+    # Display chat history
+    with chat_container:
+        for i, (role, msg) in enumerate(st.session_state.chat_history):
+            if role == "user":
+                message(msg, is_user=True, key=f"{i}_user")
+            else:
+                message(msg, key=f"{i}")
 
-# Mobile optimization
-st.markdown("""
-<style>
-    @media (max-width: 768px) {
-        .stTextInput input {font-size: 16px;}
-        .stButton button {width: 100%;}
-    }
-</style>
-""", unsafe_allow_html=True)
+    # Mobile optimization
+    st.markdown("""
+    <style>
+        @media (max-width: 768px) {
+            .stTextInput input {font-size: 16px;}
+            .stButton button {width: 100%;}
+        }
+    </style>
+    """, unsafe_allow_html=True)
