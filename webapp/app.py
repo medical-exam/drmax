@@ -14,6 +14,7 @@ from podcast import display_podcasts
 from PIL import Image
 from auth import auth
 
+
 st.set_page_config(
     page_title="Dr. Max",
     page_icon=Image.open("logo.jpg"),
@@ -38,6 +39,7 @@ if "show_info" not in st.session_state:
     st.session_state.show_info = False
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
+
 
 # Custom CSS styling
 st.markdown("""
