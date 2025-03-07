@@ -1,119 +1,242 @@
 import streamlit as st
 import psycopg2
+import pymysql
 from dataclasses import dataclass
+from contextlib import closing
+from bs4 import BeautifulSoup  # ✅ Import for HTML cleaning
 
-@dataclass 
+@dataclass
 class StudentExamForm:
     def __init__(self):
-        # Connect using existing credentials from secrets.toml
-        self.conn = psycopg2.connect(
+        """Initialize database connection for PostgreSQL and MySQL."""
+        # PostgreSQL Connection (for storing student exam data)
+        self.postgres_conn = psycopg2.connect(
             dbname=st.secrets["POSTGRES_DB"],
             user=st.secrets["POSTGRES_USER"],
             password=st.secrets["POSTGRES_PASSWORD"],
             host=st.secrets["POSTGRES_HOST"],
             port=st.secrets["POSTGRES_PORT"]
         )
-        self.cursor = self.conn.cursor()
-        self.create_exam_tables()
-        
-        # Category definitions
-        self.categories = {
-            "Mathematics": ["Algebra", "Calculus", "Geometry", "Statistics"],
-            "Physics": ["Mechanics", "Thermodynamics", "Electromagnetism", "Quantum Physics"],
-            "Chemistry": ["Organic", "Inorganic", "Physical Chemistry", "Biochemistry"],
-            "Biology": ["Anatomy", "Genetics", "Ecology", "Microbiology"],
-            "Computer Science": ["Programming", "Data Structures", "Algorithms", "Database"]
-        }
 
-    def create_exam_tables(self):
-        self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS student_exams (
-                id SERIAL PRIMARY KEY,
-                student_id VARCHAR(50) NOT NULL,
-                student_name VARCHAR(100) NOT NULL,
-                email VARCHAR(100) NOT NULL,
-                phone VARCHAR(20),
-                grade_level VARCHAR(20),
-                main_category VARCHAR(50),
-                sub_category VARCHAR(50),
-                difficulty_level VARCHAR(20),
-                duration_minutes INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        self.conn.commit()
+        # MySQL Connection (for fetching MCQs) using pymysql
+        self.mysql_conn = pymysql.connect(
+            host="13.201.239.165",
+            user="ubuntu",
+            password="LMS@12345",
+            database="ukmed_live",
+            port=3306,
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=True  # ✅ Prevents connection timeout issues
+        )
+
+        self.create_tables()
+
+    def create_tables(self):
+        """Create student_information table if not exists in PostgreSQL."""
+        with closing(self.postgres_conn.cursor()) as cursor:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS student_information (
+                    id SERIAL PRIMARY KEY,
+                    student_id VARCHAR(50) NOT NULL,
+                    student_name VARCHAR(100) NOT NULL,
+                    email VARCHAR(100) NOT NULL,
+                    phone VARCHAR(20),
+                    main_category VARCHAR(50),
+                    sub_category VARCHAR(50),
+                    difficulty_level VARCHAR(20),
+                    duration_minutes INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            self.postgres_conn.commit()
+
+    def get_categories(self):
+        """Fetch available categories from the MySQL category table."""
+        with closing(self.mysql_conn.cursor()) as cursor:
+            cursor.execute("SELECT id, name FROM category WHERE status = 1")  # ✅ Fetch active categories
+            categories = cursor.fetchall()
+        return categories if categories else []
 
     def save_exam_data(self, exam_data):
+        """Insert student exam data into PostgreSQL with error handling."""
         try:
             insert_query = """
-            INSERT INTO student_exams 
-            (student_id, student_name, email, phone, grade_level, 
-            main_category, sub_category, difficulty_level, duration_minutes)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO student_information 
+            (student_id, student_name, email, phone, main_category, sub_category, difficulty_level, duration_minutes)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """
-            self.cursor.execute(insert_query, (
-                exam_data["id"],
-                exam_data["name"],
-                exam_data["email"],
-                exam_data["phone"],
-                exam_data["grade"],
-                exam_data["main_category"],
-                exam_data["sub_category"],
-                exam_data["difficulty"],
-                exam_data["duration"]
-            ))
-            self.conn.commit()
+            with closing(self.postgres_conn.cursor()) as cursor:
+                cursor.execute(insert_query, (
+                    exam_data["id"],
+                    exam_data["name"],
+                    exam_data["email"],
+                    exam_data["phone"],
+                    exam_data["main_category"],  # ✅ Use correct column
+                    exam_data["sub_category"],  # ✅ Include sub_category
+                    exam_data["difficulty"],
+                    exam_data["duration"]
+                ))
+                self.postgres_conn.commit()
         except Exception as e:
-            self.conn.rollback()  # Rollback failed transaction
-            st.error(f"Error saving data: {str(e)}")
+            self.postgres_conn.rollback()  # ✅ Rollback if any error occurs
+            st.error(f"Database Error: {e}")  # ✅ Show error message in Streamlit
 
-        
-    def display_form(self):
-        with st.form("student_exam_form"):
-            st.subheader("📝 Student Information")
-            
-            # Personal Details Section
-            col1, col2 = st.columns(2)
-            with col1:
-                student_name = st.text_input("Full Name")
-                student_id = st.text_input("Student ID")
-            with col2:
-                email = st.text_input("Email")
-                phone = st.text_input("Phone Number")
-            
-            # Academic Details
-            col3, col4 = st.columns(2)
-            with col3:
-                grade_level = st.selectbox("Grade Level", 
-                    ["Freshman", "Sophomore", "Junior", "Senior"])
-                main_category = st.selectbox("Select Main Category", 
-                    options=list(self.categories.keys()))
-            with col4:
-                sub_category = st.selectbox("Select Sub Category",
-                    options=self.categories[main_category])
-                difficulty_level = st.select_slider("Difficulty Level",
-                    options=["Beginner", "Intermediate", "Advanced"])
-            
-            # Exam Preferences
-            time_preference = st.number_input("Exam Duration (minutes)",
-                min_value=30, max_value=180, value=60, step=30)
-            
-            submitted = st.form_submit_button("Start Exam")
-            
-            if submitted:
-                if student_name and student_id and email:
-                    exam_data = {
-                        "name": student_name,
-                        "id": student_id,
-                        "email": email,
-                        "phone": phone,
-                        "grade": grade_level,
-                        "main_category": main_category,
-                        "sub_category": sub_category,
-                        "difficulty": difficulty_level,
-                        "duration": time_preference
+
+
+    def fetch_mcqs_with_options(self, category_id):
+        """Fetch 20 MCQs with options based on the selected category."""
+        try:
+            if not self.mysql_conn.open:
+                self.mysql_conn.ping(reconnect=True)
+
+            with closing(self.mysql_conn.cursor()) as cursor:
+                query_questions = """
+                    SELECT DISTINCT qb.id AS question_id, qb.question 
+                    FROM question_bank qb
+                    JOIN question_category qc ON qb.id = qc.question_id
+                    WHERE qc.category_id = %s
+                    ORDER BY RAND()
+                    LIMIT 20;
+                """
+
+                cursor.execute(query_questions, (category_id,))
+                questions = cursor.fetchall()
+
+                if not questions:
+                    st.error("❌ No questions found for this category!")
+                    return []
+
+                # Extract question IDs
+                question_ids = [str(q["question_id"]) for q in questions]
+
+                # Fetch options for selected questions
+                query_options = f"""
+                    SELECT question_id, option_text
+                    FROM question_options
+                    WHERE question_id IN ({", ".join(question_ids)});
+                """
+                cursor.execute(query_options)
+                options = cursor.fetchall()
+
+                # Organize data into structured MCQs
+                mcqs = {}
+                for q in questions:
+                    q_id = q["question_id"]
+                    cleaned_question = BeautifulSoup(q["question"], "html.parser").get_text()  # ✅ Clean HTML
+                    mcqs[q_id] = {
+                        "question": cleaned_question,
+                        "options": []
                     }
-                    self.save_exam_data(exam_data)
-                    return exam_data, True
-                st.warning("Please fill all required fields")
-            return None, False
+
+                for opt in options:
+                    q_id = opt["question_id"]
+                    if q_id in mcqs:
+                        cleaned_option = BeautifulSoup(opt["option_text"], "html.parser").get_text()  # ✅ Clean HTML
+                        mcqs[q_id]["options"].append(cleaned_option)
+
+                return list(mcqs.values())  # ✅ Return structured questions with options
+
+        except pymysql.err.OperationalError as e:
+            st.error(f"Database error: {e}")
+            return []
+
+
+    def display_form(self):
+        """Render the student exam form in Streamlit."""
+        st.subheader("📝 Student Information")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            student_name = st.text_input("Full Name", key="name")
+            student_id = st.text_input("Student ID", key="id")
+        with col2:
+            email = st.text_input("Email", key="email")
+            phone = st.text_input("Phone Number", key="phone")
+
+        # ✅ Fetch categories dynamically
+        categories = self.get_categories()
+        category_dict = {c["name"]: c["id"] for c in categories}
+
+        if not categories:
+            st.error("❌ No categories found in the database!")
+            return {}, False
+
+        selected_category = st.selectbox("Select Category", list(category_dict.keys()))
+        difficulty_level = st.select_slider("Difficulty Level", ["Beginner", "Intermediate", "Advanced"], key="difficulty")
+        time_preference = st.number_input("Exam Duration (minutes)", min_value=30, max_value=180, value=60, step=30, key="duration")
+
+        start_exam = st.button("Start Exam")
+
+        if start_exam:
+            category_id = category_dict[selected_category]
+            exam_data = {
+                "name": student_name,
+                "id": student_id,
+                "email": email,
+                "phone": phone,
+                "main_category": selected_category,
+                "sub_category": 'sub_category',
+                "difficulty": difficulty_level,
+                "duration": time_preference
+            }
+            self.save_exam_data(exam_data)
+
+            # ✅ Store MCQs in session state to persist them
+            st.session_state.mcqs = self.fetch_mcqs_with_options(category_id)
+            st.session_state.exam_started = True
+            st.session_state.responses = {}  # ✅ Reset responses when starting new exam
+
+        # ✅ Display MCQs only if exam has started
+        if st.session_state.get("exam_started", False):
+            if "mcqs" in st.session_state and st.session_state.mcqs:
+                self.display_mcqs(st.session_state.mcqs)
+            else:
+                st.error("❌ No MCQs found for the selected category!")
+
+        return {}, False  # ✅ Always return a valid tuple
+
+
+
+    def display_mcqs(self, mcqs):
+        """Display the fetched MCQs with their options in Streamlit and allow answer selection."""
+        st.subheader("📝 Attempt the Exam")
+
+        if not mcqs:
+            st.error("❌ No MCQs found!")
+            return
+
+        # ✅ Ensure responses persist across interactions
+        if "responses" not in st.session_state:
+            st.session_state.responses = {}
+
+        for i, mcq in enumerate(mcqs):
+            st.write(f"*Q{i+1}. {mcq['question']}*")
+            
+            # ✅ Use session_state to store the selected answer
+            selected_answer = st.radio(
+                f"Select an answer for Q{i+1}:", mcq["options"], 
+                index=mcq["options"].index(st.session_state.responses.get(i, mcq["options"][0])),
+                key=f"q{i}"
+            )
+            
+            # ✅ Save the selected answer persistently
+            st.session_state.responses[i] = selected_answer
+
+        if st.button("Submit Exam"):
+            if None in st.session_state.responses.values():
+                st.warning("⚠️ Please answer all questions before submitting!")
+            else:
+                st.success("✅ Exam submitted successfully!")
+                st.write("### Your Responses:")
+                for i, ans in st.session_state.responses.items():
+                    st.write(f"**Q{i+1}:** {ans}")
+
+
+# Streamlit App Execution
+if __name__ == "__main__":
+    st.set_page_config(page_title="Student Exam Form", layout="wide")
+    st.title("🎓 Student Exam Registration")
+    
+    form = StudentExamForm()
+    form.display_form()

@@ -126,39 +126,3 @@ else:
     st.subheader("Test your knowledge with medical questions!")
 
     exam_data, start_exam = st.session_state.exam_form.display_form()
-    
-    if start_exam:
-        st.success(f"Ready to start {exam_data['main_category']} exam in {exam_data['sub_category']}!")
-
-        if st.session_state.quiz_completed:
-            show_final_report()
-            
-            if st.button("Retake Exam"):
-                st.session_state.mcq_progress = {"correct": 0, "incorrect": 0, "incorrect_topics": []}
-                st.session_state.current_question_index = 0
-                st.session_state.quiz_completed = False
-                st.session_state.retake_exam = True
-        else:
-            # Get current question
-            current_question_data = mcq_questions[st.session_state.current_question_index]
-            st.write(f"**Question {st.session_state.current_question_index + 1}:** {current_question_data['question']}")
-
-            # User answer selection
-            user_answer = st.radio("Select your answer:", current_question_data["options"], key=f"question_{st.session_state.current_question_index}")
-
-            # Submit Answer Button
-            if st.button("Submit Answer"):
-                handle_mcq_answer(user_answer)
-
-            # Show Explanation Word by Word
-            if st.session_state.show_explanation:
-                placeholder = st.empty()
-                words = st.session_state.explanation_text.split()
-                display_text = ""
-                for word in words:
-                    display_text += word + " "
-                    placeholder.write(display_text)
-                    time.sleep(0.2)
-                st.button("Next Question", on_click=next_question)
-
-
