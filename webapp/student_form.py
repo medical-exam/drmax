@@ -44,24 +44,28 @@ class StudentExamForm:
         self.conn.commit()
 
     def save_exam_data(self, exam_data):
-        insert_query = """
-        INSERT INTO student_exams 
-        (student_id, student_name, email, phone, grade_level, 
-         main_category, sub_category, difficulty_level, duration_minutes)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """
-        self.cursor.execute(insert_query, (
-            exam_data["id"],
-            exam_data["name"],
-            exam_data["email"],
-            exam_data["phone"],
-            exam_data["grade"],
-            exam_data["main_category"],
-            exam_data["sub_category"],
-            exam_data["difficulty"],
-            exam_data["duration"]
-        ))
-        self.conn.commit()
+        try:
+            insert_query = """
+            INSERT INTO student_exams 
+            (student_id, student_name, email, phone, grade_level, 
+            main_category, sub_category, difficulty_level, duration_minutes)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            self.cursor.execute(insert_query, (
+                exam_data["id"],
+                exam_data["name"],
+                exam_data["email"],
+                exam_data["phone"],
+                exam_data["grade"],
+                exam_data["main_category"],
+                exam_data["sub_category"],
+                exam_data["difficulty"],
+                exam_data["duration"]
+            ))
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()  # Rollback failed transaction
+            st.error(f"Error saving data: {str(e)}")
 
         
     def display_form(self):
