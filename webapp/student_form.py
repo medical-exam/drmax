@@ -4,6 +4,7 @@ import pymysql
 from dataclasses import dataclass
 from contextlib import closing
 from bs4 import BeautifulSoup  # ✅ Import for HTML cleaning
+from calculate_score import ScoreCalculator
 
 @dataclass
 class StudentExamForm:
@@ -97,7 +98,7 @@ class StudentExamForm:
                     JOIN question_category qc ON qb.id = qc.question_id
                     WHERE qc.category_id = %s
                     ORDER BY RAND()
-                    LIMIT 20;
+                    LIMIT 5;
                 """
 
                 cursor.execute(query_questions, (category_id,))
@@ -125,6 +126,7 @@ class StudentExamForm:
                     q_id = q["question_id"]
                     cleaned_question = BeautifulSoup(q["question"], "html.parser").get_text()  # ✅ Clean HTML
                     mcqs[q_id] = {
+                        "question_id": q_id,  # ✅ Ensure question_id is included
                         "question": cleaned_question,
                         "options": []
                     }
@@ -215,39 +217,40 @@ class StudentExamForm:
         current_index = st.session_state.current_question
         current_mcq = mcqs[current_index]
 
-        st.write(f"*Q{current_index+1}. {current_mcq['question']}*")
+        st.write(f"Q{current_index+1}. {current_mcq['question']}")
 
         # Radio button for answer selection
+        question_id = str(current_mcq["question_id"])  # ✅ Ensure ID is stored as string
+
         selected_answer = st.radio(
             "Select an answer:",
             current_mcq["options"],
-            key=f"q{current_index}"
+            index=None,  # Ensure no default selection
+            key=f"q{question_id}"
         )
-
-        # Store the selected answer
-        st.session_state.responses[current_index] = selected_answer
-
+        if selected_answer:
+            st.session_state.responses[question_id] = selected_answer
+        
         col1, col2 = st.columns(2)
         
         if current_index > 0:
-            if col1.button("⬅️ Previous", key="prev"):
+            if col1.button("⬅ Previous", key="prev"):
                 st.session_state.current_question -= 1
                 st.rerun()
 
         if current_index < total_questions - 1:
-            if col2.button("➡️ Next", key="next"):
+            if col2.button("➡ Next", key="next"):
                 st.session_state.current_question += 1
                 st.rerun()
         else:
             # Last question -> Show Submit button
             if st.button("✅ Submit Exam"):
                 if len(st.session_state.responses) < total_questions:
-                    st.warning("⚠️ Please answer all questions before submitting!")
+                    st.warning("⚠ Please answer all questions before submitting!")
                 else:
                     st.success("✅ Exam submitted successfully!")
-                    st.write("### Your Responses:")
-                    for i, ans in st.session_state.responses.items():
-                        st.write(f"**Q{i+1}:** {ans}")
+                    score_calculator = ScoreCalculator()
+                    score_calculator.display_results()
 
                     # Reset session state after submission
                     st.session_state.current_question = 0
