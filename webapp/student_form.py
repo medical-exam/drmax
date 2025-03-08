@@ -199,38 +199,59 @@ class StudentExamForm:
 
 
     def display_mcqs(self, mcqs):
-        """Display the fetched MCQs with their options in Streamlit and allow answer selection."""
+        """Display MCQs one by one after answering the previous question."""
         st.subheader("📝 Attempt the Exam")
 
         if not mcqs:
             st.error("❌ No MCQs found!")
             return
 
-        # ✅ Ensure responses persist across interactions
-        if "responses" not in st.session_state:
+        # Initialize session state for tracking the current question
+        if "current_question" not in st.session_state:
+            st.session_state.current_question = 0
             st.session_state.responses = {}
 
-        for i, mcq in enumerate(mcqs):
-            st.write(f"*Q{i+1}. {mcq['question']}*")
-            
-            # ✅ Use session_state to store the selected answer
-            selected_answer = st.radio(
-                f"Select an answer for Q{i+1}:", mcq["options"], 
-                index=mcq["options"].index(st.session_state.responses.get(i, mcq["options"][0])),
-                key=f"q{i}"
-            )
-            
-            # ✅ Save the selected answer persistently
-            st.session_state.responses[i] = selected_answer
+        total_questions = len(mcqs)
+        current_index = st.session_state.current_question
+        current_mcq = mcqs[current_index]
 
-        if st.button("Submit Exam"):
-            if None in st.session_state.responses.values():
-                st.warning("⚠️ Please answer all questions before submitting!")
-            else:
-                st.success("✅ Exam submitted successfully!")
-                st.write("### Your Responses:")
-                for i, ans in st.session_state.responses.items():
-                    st.write(f"**Q{i+1}:** {ans}")
+        st.write(f"*Q{current_index+1}. {current_mcq['question']}*")
+
+        # Radio button for answer selection
+        selected_answer = st.radio(
+            "Select an answer:",
+            current_mcq["options"],
+            key=f"q{current_index}"
+        )
+
+        # Store the selected answer
+        st.session_state.responses[current_index] = selected_answer
+
+        col1, col2 = st.columns(2)
+        
+        if current_index > 0:
+            if col1.button("⬅️ Previous", key="prev"):
+                st.session_state.current_question -= 1
+                st.rerun()
+
+        if current_index < total_questions - 1:
+            if col2.button("➡️ Next", key="next"):
+                st.session_state.current_question += 1
+                st.rerun()
+        else:
+            # Last question -> Show Submit button
+            if st.button("✅ Submit Exam"):
+                if len(st.session_state.responses) < total_questions:
+                    st.warning("⚠️ Please answer all questions before submitting!")
+                else:
+                    st.success("✅ Exam submitted successfully!")
+                    st.write("### Your Responses:")
+                    for i, ans in st.session_state.responses.items():
+                        st.write(f"**Q{i+1}:** {ans}")
+
+                    # Reset session state after submission
+                    st.session_state.current_question = 0
+                    st.session_state.responses = {}
 
 
 # Streamlit App Execution
