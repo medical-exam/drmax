@@ -63,28 +63,29 @@ class ScoreCalculator:
 
     
     def display_results(self):
-        """Display student's exam score in Streamlit."""
-        st.subheader("📊 Exam Results")
-        
-        if "responses" not in st.session_state or not st.session_state.responses:
-            st.warning("⚠ No responses found! Complete the exam first.")
-            return
-        
-        score, total = self.calculate_score(st.session_state.responses)
-        
-        st.success(f"✅ Your Score: {score} / {total}")
-        st.progress(score / total)
-        
-        # Show detailed response analysis
-        st.write("### Your Responses vs Correct Answers")
-        correct_answers = self.get_correct_answers(st.session_state.responses.keys())
-        
-        for index, (q_id, student_answer) in enumerate(st.session_state.responses.items(), start=1):
-            correct = correct_answers.get(str(q_id), "N/A")
-            is_correct = "✅" if student_answer == correct else "❌"
-            st.write(f"*Q{index}:* You selected: {student_answer} | Correct Answer: {correct} {is_correct}")
+        with st.expander("📊 Exam Result", expanded=True):
+                st.markdown(f'<div class="report-box"></div>', unsafe_allow_html=True)
+            
+            
+                if "responses" not in st.session_state or not st.session_state.responses:
+                    st.warning("⚠ No responses found! Complete the exam first.")
+                    return
+                
+                score, total = self.calculate_score(st.session_state.responses)
+                
+                st.success(f"✅ Your Score: {score} / {total}")
+                st.progress(score / total)
+                
+                # Show detailed response analysis
+                st.write("### Your Responses vs Correct Answers")
+                correct_answers = self.get_correct_answers(st.session_state.responses.keys())
+                
+                for index, (q_id, student_answer) in enumerate(st.session_state.responses.items(), start=1):
+                    correct = correct_answers.get(str(q_id), "N/A")
+                    is_correct = "✅" if student_answer == correct else "❌"
+                    st.write(f"*Q{index}:* You selected: {student_answer} | Correct Answer: {correct} {is_correct}")
 
-        st.session_state.responses = {}
+                st.session_state.responses = {}
 
 # Streamlit Execution
 if __name__ == "__main__":
