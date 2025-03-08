@@ -102,20 +102,26 @@ def auth():
     def logout():
         st.session_state.clear()
         st.success("👋 Logged out successfully!")
+        st.rerun()
 
-    
-    
+    # Session state for login
     if "logged_in" not in st.session_state:
         st.session_state["logged_in"] = False
     if "selected_tab" not in st.session_state:
         st.session_state["selected_tab"] = "Login"
+
+    # Sidebar logout button (Visible when logged in)
+    if st.session_state["logged_in"]:
+        with st.sidebar:
+            st.subheader(f"👤 {st.session_state['email']}")
+            if st.button("🚪 Logout"):
+                logout()
 
     col1, col2, col3 = st.columns([1, 2, 1])  # Middle column is wider
 
     with col2:
         st.markdown('<div class="form-box">', unsafe_allow_html=True)
 
-       
         if not st.session_state["logged_in"]:
             if st.session_state["selected_tab"] == "Login":
                 st.subheader("🔑 Login")
@@ -142,5 +148,3 @@ def auth():
     # If logged in, display welcome message
     if st.session_state["logged_in"]:
         st.subheader(f"Welcome, {st.session_state['email']}! 🎉")
-        if st.button("Logout"):
-            logout()

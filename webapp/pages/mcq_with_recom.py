@@ -116,6 +116,14 @@ def show_final_report():
     else:
         st.write("✅ Great job! No weak areas detected.")
 
+
+def logout():
+    st.session_state.clear()
+    st.success("👋 Logged out successfully!")
+    time.sleep(1)
+    st.rerun()
+
+
 # Streamlit UI
 
 if not st.session_state["authenticated"]:
@@ -124,5 +132,8 @@ else:
     st.set_page_config(page_title="Dr. Max - MCQ Trainer", layout="wide")
     st.title("📝 MCQ Practice with Dr. Max")
     st.subheader("Test your knowledge with medical questions!")
+
+    # Logout Button
+    st.sidebar.button("🚪 Logout", on_click=logout)
 
     exam_data, start_exam = st.session_state.exam_form.display_form()

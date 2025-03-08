@@ -58,11 +58,18 @@ def generate_response(prompt):
     )
     return response.choices[0].message.content
 
+def logout():
+    st.session_state.clear()
+    st.success("👋 Logged out successfully!")
+    time.sleep(1)
+    st.rerun()
+
 if not st.session_state["authenticated"]:
     auth()
 else:
     # Streamlit UI
     st.set_page_config(page_title="Dr. Max - Medical Chatbot", layout="wide")
+    st.sidebar.button("🚪 Logout", on_click=logout)
 
     st.title("🤖 Dr. Max - AI Medical Mentor")
     st.subheader("Your sarcastic study partner for medical exams")

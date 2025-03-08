@@ -125,6 +125,13 @@ st.markdown("""
             .stMarkdown { font-size: 16px; }
         </style>
     """, unsafe_allow_html=True)
+
+def logout():
+    st.session_state.clear()
+    st.success("👋 Logged out successfully!")
+    time.sleep(1)
+    st.rerun()
+
 if not st.session_state["authenticated"]:
     auth()
 else:
@@ -135,6 +142,8 @@ else:
         # Sidebar for chat history (only relevant to the Home page)
         with st.sidebar:
             st.button("📜 Show History", on_click=lambda: st.session_state.update(show_history=not st.session_state.show_history))
+             # Logout Button
+            st.button("🚪 Logout", on_click=logout)
             if st.session_state.show_history:
                 chat_history = st.session_state.assistant.get_chat_history()
                 for entry in chat_history:
