@@ -2,6 +2,8 @@ import os
 import streamlit as st
 import boto3
 import time
+import docx
+import PyPDF2
 from openai import OpenAI
 from dotenv import load_dotenv
 from streamlit_chat import message
@@ -29,22 +31,52 @@ and prioritize clinical reasoning. When users make mistakes, offer sharp but con
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 
-def search_s3_for_content(user_query):
-    """Searches S3 bucket for relevant content matching the user query."""
+def extract_text_from_file(uploaded_file):
+    """Extract text from uploaded file based on its type."""
+    if uploaded_file is None:
+        return None
+    
+    file_type = uploaded_file.name.split(".")[-1]
+    
     try:
-        response = s3.list_objects_v2(Bucket=S3_BUCKET_NAME)
-        if 'Contents' in response:
-            for obj in response['Contents']:
-                file_key = obj['Key']
-                if user_query.lower() in file_key.lower():  # Basic search by filename
-                    s3_object = s3.get_object(Bucket=S3_BUCKET_NAME, Key=file_key)
-                    return s3_object['Body'].read().decode('utf-8')  # Assume text content
+        if file_type == "txt":
+            return uploaded_file.read().decode("utf-8")
+        
+        elif file_type == "pdf":
+            reader = PyPDF2.PdfReader(uploaded_file)
+            text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+            return text if text else "No readable text found in this PDF."
+        
+        elif file_type == "docx":
+            doc = docx.Document(uploaded_file)
+            text = "\n".join([para.text for para in doc.paragraphs])
+            return text if text.strip() else "No text found in this Word document."
+        
     except Exception as e:
-        st.error(f"Error accessing S3: {e}")
+        return f"Error extracting text: {str(e)}"
+    
     return None
 
+def generate_summary(text):
+    """Generates a summary of the extracted text using OpenAI."""
+    if not text:
+        return "Sorry, I couldn't extract text from the uploaded file."
+    
+    messages = [
+        {"role": "system", "content": "Summarize this medical document in a concise and structured manner."},
+        {"role": "user", "content": text[:5000]}  # Limit to 5000 chars to avoid token overflow
+    ]
+    
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=messages,
+        temperature=0.5,
+        max_tokens=300
+    )
+    return response.choices[0].message.content
+
 def generate_response(prompt):
-    """Generates a response from OpenAI if S3 has no matching content."""
+    """Generates a chatbot response for user questions."""
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt}
@@ -64,7 +96,7 @@ def logout():
     time.sleep(1)
     st.rerun()
 
-if not st.session_state["authenticated"]:
+if not st.session_state.get("authenticated"):
     auth()
 else:
     # Streamlit UI
@@ -79,26 +111,22 @@ else:
     input_container = st.container()
 
     with input_container:
-        user_input = st.text_input("Ask Dr. Max about medical concepts, cases, or exam strategies:", key="input")
+        uploaded_file = st.file_uploader("Upload a medical document (optional)", type=["txt", "pdf", "docx"])
+
+        if uploaded_file:
+            st.success(f"📂 Uploaded: {uploaded_file.name}")
+            extracted_text = extract_text_from_file(uploaded_file)
+            if extracted_text:
+                summary = generate_summary(extracted_text)
+                st.write("### 📝 Summary of your document:")
+                st.info(summary)
+
+        user_input = st.text_input("💬 Ask Dr. Max about medical concepts, cases, or exam strategies:", key="input")
+
         if user_input:
-            s3_content = search_s3_for_content(user_input)
-            if s3_content:
-                response = s3_content  # Use content from S3 if found
-            else:
-                response = generate_response(user_input)  # Otherwise, use OpenAI
-            
+            response = generate_response(user_input)
             st.session_state.chat_history.append(("user", user_input))
-            st.session_state.chat_history.append(("system", ""))  # Placeholder for streamed response
-            
-            response_container = st.empty()
-            displayed_response = ""
-            
-            for word in response.split():
-                displayed_response += word + " "
-                response_container.markdown(f"**Dr. Max:** {displayed_response}")
-                time.sleep(0.1)  # Simulate streaming effect
-            
-            st.session_state.chat_history[-1] = ("system", displayed_response)
+            st.session_state.chat_history.append(("system", response))
 
     # Display chat history
     with chat_container:
@@ -113,7 +141,7 @@ else:
     <style>
         @media (max-width: 768px) {
             .stTextInput input {font-size: 16px;}
-            .stButton button {width: 100%;}
+            .stButton button {width: 100%;} 
         }
     </style>
     """, unsafe_allow_html=True)
