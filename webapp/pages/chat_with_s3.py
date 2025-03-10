@@ -90,7 +90,7 @@ def generate_response(prompt):
 
     # If a summary is available, include it in the context
     if st.session_state.uploaded_summary:
-        messages.append({"role": "system", "content": f"Dr. Max, analyze the following document summary Relevant document summary:\n{st.session_state.uploaded_summary} and answer the question in structured and concise manner."})
+        messages.append({"role": "system", "content": f"Based on the relevant document summary below, provide a clear and concise answer to the given question. Ensure that the response is accurate and aligned with medical concepts, clinical cases, or exam strategies.Relevant document summary:{st.session_state.uploaded_summary}"})
 
     messages.append({"role": "user", "content": prompt})
 
@@ -132,8 +132,8 @@ else:
 
     # Display Summary if available
     if st.session_state.uploaded_summary:
-        st.write("### 📝 Summary of your document:")
-        st.info(st.session_state.uploaded_summary)
+        with st.expander("### 📝 Summary of your document:", expanded=True):
+                st.markdown(f'<div class="report-box">{st.session_state.uploaded_summary}</div>', unsafe_allow_html=True)
 
     # Chat Interface
     chat_container = st.container()
