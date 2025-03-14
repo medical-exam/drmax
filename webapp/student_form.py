@@ -79,6 +79,8 @@ class StudentExamForm:
                     exam_data["duration"]
                 ))
                 self.postgres_conn.commit()
+             # ✅ Store category in session
+
         except Exception as e:
             self.postgres_conn.rollback()  # ✅ Rollback if any error occurs
             st.error(f"Database Error: {e}")  # ✅ Show error message in Streamlit
@@ -176,6 +178,8 @@ class StudentExamForm:
 
         if start_exam:
             category_id = category_dict[selected_category]
+            
+            st.session_state.current_category = selected_category 
             exam_data = {
                 "name": student_name,
                 "id": student_id,

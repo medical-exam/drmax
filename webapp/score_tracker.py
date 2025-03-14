@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from contextlib import closing
 import matplotlib.dates as mdates
-
+import plotly.express as px
+import pandas as pd;
 class ScoreTracker:
     def __init__(self):
         """Initialize database connection."""
@@ -21,9 +22,10 @@ class ScoreTracker:
         """Create table for storing scores if it doesn't exist."""
         with closing(self.conn.cursor()) as cursor:
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS exam_scores (
+                CREATE TABLE IF NOT EXISTS scores (
                     id SERIAL PRIMARY KEY,
                     student_id VARCHAR(50) NOT NULL,
+                    category VARCHAR(100) NOT NULL,
                     score INTEGER NOT NULL,
                     total_questions INTEGER NOT NULL,
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -31,56 +33,63 @@ class ScoreTracker:
             """)
             self.conn.commit()
 
-    def save_score(self, student_id, score, total_questions):
-        """Save student score to database."""
+    def save_score(self, student_id, category, score, total_questions):
+        """Save student score to database with category."""
         with closing(self.conn.cursor()) as cursor:
             cursor.execute("""
-                INSERT INTO exam_scores (student_id, score, total_questions)
-                VALUES (%s, %s, %s)
-            """, (student_id, score, total_questions))
+                INSERT INTO scores (student_id, category, score, total_questions)
+                VALUES (%s, %s, %s, %s)
+            """, (student_id, category, score, total_questions))
             self.conn.commit()
 
     def get_scores(self, student_id):
-        """Retrieve past scores for a given student."""
+        """Retrieve past scores along with categories for a given student."""
         with closing(self.conn.cursor()) as cursor:
             cursor.execute("""
-                SELECT score, total_questions, timestamp FROM exam_scores 
+                SELECT category, score, total_questions, timestamp 
+                FROM scores 
                 WHERE student_id = %s ORDER BY timestamp ASC
             """, (student_id,))
             return cursor.fetchall()
 
     def plot_progress(self, student_id):
-        """Plot a graph of scores over time with correct date formatting."""
+        """Plot progress interactively using Plotly."""
         scores = self.get_scores(student_id)
 
         if not scores:
             st.warning("No previous scores found.")
             return
 
-        # Convert timestamps explicitly
-        timestamps = [row[2] for row in scores]  # Ensure timestamps are in correct datetime format
-        score_percentages = [(row[0] / row[1]) * 100 for row in scores]
+        # Convert data to Pandas DataFrame
+        df = pd.DataFrame(scores, columns=["Category", "Marks", "Total Questions", "Timestamp"])
+        df["Percentage"] = (df["Marks"] / df["Total Questions"]) * 100
 
-        col1, col2, col3 = st.columns([1, 4, 1])  # Center the plot
+        # Create interactive Plotly line chart
+        fig = px.line(df, x="Timestamp", y="Percentage", text="Category",
+              markers=True, title="📊 Exam Progress Over Time",
+              custom_data=[df["Marks"], df["Total Questions"]])
 
-        with col2:  
-            fig, ax = plt.subplots(figsize=(4, 3), dpi=150)
-            ax.plot(timestamps, score_percentages, marker='o', linestyle='-', color='b', label="Score %")
+        # Customize marker tooltips
+        fig.update_traces(
+            mode="markers+lines", 
+            marker=dict(size=8, color="blue"),
+            hovertemplate="<b>Category:</b> %{text}<br>"
+                        "<b>Marks:</b> %{customdata[0]}/%{customdata[1]}<br>"
+                        "<b>Percentage:</b> %{y:.1f}%<br>"
+                        "<b>Time:</b> %{x}<extra></extra>"
+        )
 
-            ax.set_xlabel("Date & Time", fontsize=8)
-            ax.set_ylabel("Score (%)", fontsize=8)
-            ax.set_title("📊 Exam Progress Over Time", fontsize=10)
-            ax.set_ylim(0, 100)
-            ax.grid(True, linestyle="--", alpha=0.7)
+        # Show plot
+        selected = st.plotly_chart(fig, use_container_width=True)
 
-            # Fix x-axis formatting
-            ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
-            plt.xticks(rotation=45, fontsize=6)
-            plt.yticks(fontsize=6)
+        # Display clicked data details
+        click_data = st.session_state.get("click_data")
+        if click_data:
+            st.success(f"📌 *Category:* {click_data['Category']}\n\n"
+                       f"🎯 *Marks:* {click_data['Marks']}/{click_data['Total Questions']}\n\n"
+                       f"📅 *Date & Time:* {click_data['Timestamp']}\n\n"
+                       f"📊 *Score Percentage:* {click_data['Percentage']:.1f}%")
 
-            ax.legend(loc="upper left", fontsize=6)
-            st.pyplot(fig)
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Student Score Tracker", layout="wide")
