@@ -1,0 +1,75 @@
+name: Deploy-to-ECS-Fargate
+
+on:
+  push:
+    branches:
+      - main  # Trigger the workflow on push to the main branch
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: healthcare/radiology
+  ECS_CLUSTER: Healthcare
+  ECS_SERVICE: radiology
+  ECS_TASK_DEFINITION: Radiology
+  CONTAINER_NAME: radiology # Replace with your actual container name
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+    - name: Download existing task definition
+      run: |
+        aws ecs describe-task-definition --task-definition $ECS_TASK_DEFINITION --query taskDefinition > task-definition.json
+
+    - name: Filter out invalid fields from task definition
+      id: filter-task-def
+      run: |
+        jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' task-definition.json > filtered-task-definition.json
+        mv filtered-task-definition.json task-definition.json
+
+    - name: Fill in the new image ID in the task definition
+      id: update-task-def
+      run: |
+        sed -i 's|"image": ".*"|"image": "'${{ steps.build-image.outputs.image }}'"|' task-definition.json
+
+    - name: Update container port mappings in task definition
+      id: update-ports
+      run: |
+        jq '.containerDefinitions[0].portMappings = [
+          { "containerPort": 5432, "hostPort": 5432, "protocol": "tcp" },
+          { "containerPort": 8501, "hostPort": 8501, "protocol": "tcp" }
+        ]' task-definition.json > updated-task-definition.json
+        mv updated-task-definition.json task-definition.json
+
+    - name: Register new task definition
+      run: |
+        aws ecs register-task-definition --cli-input-json file://task-definition.json
+
+    - name: Update ECS service
+      run: |
+        aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition $ECS_TASK_DEFINITION --force-new-deployment

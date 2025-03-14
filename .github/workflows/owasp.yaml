@@ -1,0 +1,48 @@
+name: OWASP-Dependency-Check
+
+on:
+    workflow_run:
+        workflows: ["Bandit and Trivy"]
+        types:
+            - completed
+
+jobs:
+    dependency-check:
+        if: ${{ github.event.workflow_run.conclusion == 'success' }}
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout repository
+                uses: actions/checkout@v2
+
+            - name: Set up JDK 11
+                uses: actions/setup-java@v2
+                with:
+                    java-version: '11'
+
+            - name: Run OWASP Dependency-Check
+                uses: actions/owasp-dependency-check@v2
+                with:
+                    project: 'Radiology'
+                    format: 'ALL'
+                    output-directory: './dependency-check-report'
+
+            - name: Upload Dependency-Check report
+                uses: actions/upload-artifact@v2
+                with:
+                    name: dependency-check-report
+                    path: ./dependency-check-report
+
+            - name: Upload-report-to-DefectDojo
+                env:
+                    DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+                    DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
+                run: |
+                    curl -X POST "$DEFECTDOJO_URL/api/v2/import-scan/" \
+                            -H "Authorization: Token $DEFECTDOJO_API_KEY" \
+                            -F 'scan_type=Dependency Check Scan' \
+                            -F 'minimum_severity=Low' \
+                            -F 'active=true' \
+                            -F 'verified=false' \
+                            -F 'file=@./dependency-check-report/dependency-check-report.xml' \
+                            -F 'engagement=1'

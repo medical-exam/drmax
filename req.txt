@@ -1,0 +1,10 @@
+streamlit
+SpeechRecognition
+pyttsx3
+google.generativeai
+python-dotenv
+pyaudio
+openai
+pymongo
+reportlab
+python-docx

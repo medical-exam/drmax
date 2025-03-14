@@ -1,0 +1,158 @@
+name: DefectDojo Integration
+
+# on:
+#   push:
+#     branches:
+#       - main
+#   pull_request:
+#     branches:
+#       - main
+
+on:
+    workflow_run:
+      workflows:
+        - "Deploy-to-ECS-Fargate"  # Name of ecr_ecs.yaml workflow
+      types:
+        - completed  # Ensures it runs only after completion
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install bandit bandit-sarif-formatter jq requests
+
+      - name: Run Bandit Security Scan
+        id: bandit_scan
+        continue-on-error: true
+        run: |
+          bandit -r . -f json -o bandit-results.json || true
+
+      - name: Debug Bandit Results
+        run: cat bandit-results.json | jq .
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Extract ECR registry from image URI
+      - name: Extract ECR registry
+        id: extract-registry
+        run: |
+          ECR_IMAGE_URI="${{ secrets.AWS_ECR_IMAGE_URI }}"
+          REGISTRY=$(echo "$ECR_IMAGE_URI" | cut -d '/' -f 1)
+          echo "registry=$REGISTRY" >> $GITHUB_OUTPUT
+
+      # Authenticate Docker to pull from ECR
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | \
+          docker login --username AWS --password-stdin ${{ steps.extract-registry.outputs.registry }}
+
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
+      - name: Run Trivy Scan
+        id: trivy_scan
+        continue-on-error: true
+        run: |
+          trivy image --format json --output trivy-results.json ${{ secrets.AWS_ECR_IMAGE_URI }} || echo "Trivy scan failed, but continuing..."
+
+      - name: Debug Trivy Results
+        run: |
+          if [ -f "trivy-results.json" ]; then
+            cat trivy-results.json | jq .
+          else
+            echo "No Trivy results file found."
+          fi
+
+      - name: Upload Findings to DefectDojo
+        env:
+          DEFECT_DOJO_URL: ${{ secrets.DEFECT_DOJO_URL }}
+          DEFECT_DOJO_API_KEY: ${{ secrets.DEFECT_DOJO_API_KEY }}
+          DEFECT_DOJO_ENGAGEMENT_ID: ${{ secrets.DEFECT_DOJO_ENGAGEMENT_ID }}
+        run: |
+          python <<EOF
+          import json
+          import os
+          import requests
+
+          DEFECT_DOJO_URL = os.getenv("DEFECT_DOJO_URL")
+          DEFECT_DOJO_API_KEY = os.getenv("DEFECT_DOJO_API_KEY")
+          DEFECT_DOJO_ENGAGEMENT_ID = os.getenv("DEFECT_DOJO_ENGAGEMENT_ID")
+
+          print("DefectDojo URL:", DEFECT_DOJO_URL)
+          print("Engagement ID:", DEFECT_DOJO_ENGAGEMENT_ID)
+
+          if not all([DEFECT_DOJO_URL, DEFECT_DOJO_API_KEY, DEFECT_DOJO_ENGAGEMENT_ID]):
+              print("Missing DefectDojo credentials. Exiting...")
+              exit(1)
+
+          files = []
+          if os.path.exists("bandit-results.json"):
+              try:
+                  with open("bandit-results.json", "r") as f:
+                      json.load(f)  # Validate JSON
+                  files.append(('file', ('bandit-results.json', open('bandit-results.json', 'rb'), 'application/json')))
+                  print("✅ Bandit results validated.")
+              except Exception as e:
+                  print(f"❌ Bandit results invalid: {e}")
+          else:
+              print("⚠ Bandit results file not found.")
+
+          if os.path.exists("trivy-results.json"):
+              try:
+                  with open("trivy-results.json", "r") as f:
+                      json.load(f)  # Validate JSON
+                  files.append(('file', ('trivy-results.json', open('trivy-results.json', 'rb'), 'application/json')))
+                  print("✅ Trivy results validated.")
+              except Exception as e:
+                  print(f"❌ Trivy results invalid: {e}")
+          else:
+              print("⚠ Trivy results file not found.")
+
+          if not files:
+              print("⚠ No valid scan results to upload. Exiting.")
+              exit(0)
+
+          data = {
+              'engagement': DEFECT_DOJO_ENGAGEMENT_ID,
+              'scan_type': 'Bandit Scan',
+              'close_old_findings': 'true',
+              'active': 'true'
+          }
+
+          upload_url = f"{DEFECT_DOJO_URL}/api/v2/import-scan/"
+          headers = {'Authorization': f'Token {DEFECT_DOJO_API_KEY}'}
+
+          try:
+              response = requests.post(upload_url, data=data, files=files, headers=headers)
+              response.raise_for_status()
+              print("✅ Findings uploaded successfully!")
+              print("Response:", response.json())
+          except requests.exceptions.HTTPError as e:
+              print(f"❌ HTTP error uploading findings: {e.response.text}")
+              exit(1)
+          except Exception as e:
+              print(f"❌ Error uploading findings: {e}")
+              exit(1)
+          EOF

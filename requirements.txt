@@ -1,0 +1,13 @@
+# requirements.txt
+streamlit
+openai
+python-dotenv
+streamlit-chat
+matplotlib
+boto3
+psycopg2-binary
+bcrypt
+PyPDF2
+pymysql
+bs4
+#Minor Changes
